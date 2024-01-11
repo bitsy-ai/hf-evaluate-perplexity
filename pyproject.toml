@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "perplexity"
+version = "0.1.0"
+description = "Perplexity (PPL) measures exponentiated average negative log-likelihood of a sequence, which is a common measurement for evaluating language models. Intended for use with Hugging Face evaluate library."
+authors = ["Leigh Johnson <leigh@bitsy.ai>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+evaluate = "^0.4.1"
+datasets = "^2.16.1"
+transformers = "^4.36.2"
+torch = "^2.1.2"
+gradio = "^3.19.1"
+accelerate = "^0.25.0"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.4"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

@@ -1,11 +1,9 @@
 ---
 title: Perplexity
-datasets:
--  
 tags:
 - evaluate
 - measurement
-description: "TODO: add a description here"
+description: "Perplexity (PPL) measures exponentiated average negative log-likelihood of a sequence, which is a common measurement for evaluating language models."
 sdk: gradio
 sdk_version: 3.19.1
 app_file: app.py
@@ -17,7 +15,16 @@ pinned: false
 ***Module Card Instructions:*** *Fill out the following subsections. Feel free to take a look at existing measurement cards if you'd like examples.*
 
 ## Measurement Description
-*Give a brief overview of this measurement, including what task(s) it is usually used for, if any.*
+
+Based on https://huggingface.co/spaces/evaluate-metric/perplexity/ with improvements to support pipelines. 
+
+Given a model and an input text sequence, perplexity measures how likely the model is to generate the input text sequence.
+
+As a metric, it can be used to evaluate how well the model has learned the distribution of the text it was trained on.
+
+In this case, model_id should be the trained model to be evaluated, and the input texts should be the text that the model was trained on.
+
+This implementation of perplexity is calculated with log base e, as in perplexity = e**(sum(losses) / num_tokenized_tokens), following recent convention in deep learning frameworks.
 
 ## How to Use
 *Give general statement of how to use the measurement*
