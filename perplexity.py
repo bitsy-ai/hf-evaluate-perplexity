@@ -1,4 +1,4 @@
-# Copyright 2020 The HuggingFace Datasets Authors and the current dataset script contributor.
+# Copyright 2022 The HuggingFace Datasets Authors and the current dataset script contributor.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,52 +11,44 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Perplexity (PPL) measures exponentiated average negative log-likelihood of a sequence, which is a common measurement for evaluating language models. Intended for use with Hugging Face evaluate library."""
-from typing import List, Optional
-import logging
-import evaluate
-import torch
-from torch.nn import CrossEntropyLoss
-import numpy as np
+"""Perplexity Metric."""
 
 import datasets
+import numpy as np
+import torch
+from torch.nn import CrossEntropyLoss
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-# TODO: Add BibTeX citation
+import evaluate
+from evaluate import logging
+
+
 _CITATION = """\
-@InProceedings{huggingface:module,
-title = {A great new module},
-authors={huggingface, Inc.},
-year={2024}
-}
+
 """
 
-logger = logging.getLogger(__name__)
+_DESCRIPTION = """
+Perplexity (PPL) is one of the most common metrics for evaluating language models.
+It is defined as the exponentiated average negative log-likelihood of a sequence, calculated with exponent base `e`.
 
-# TODO: Add description of the module here
-_DESCRIPTION = """\
-Perplexity (PPL) measures exponentiated average negative log-likelihood of a sequence, which is a common measurement for evaluating language models. Intended for use with Hugging Face transformer pipeline and evaluate libraries.
-
-Based on Hugging Face perplexity measurement, with improved handling of pipelines. https://huggingface.co/spaces/evaluate-measurement/perplexity
 For more information, see https://huggingface.co/docs/transformers/perplexity
 """
 
-
-# TODO: Add description of the arguments of the module here
 _KWARGS_DESCRIPTION = """
-Calculates how good are predictions given some references, using certain scores
-
 Args:
-    model (AutoModelForCausalLM): model used for calculating Perplexity
+    model_id (str): model used for calculating Perplexity
             NOTE: Perplexity can only be calculated for causal language models.
                     This includes models such as gpt2, causal variations of bert,
                     causal versions of t5, and more (the full list can be found
                     in the AutoModelForCausalLM documentation here:
                     https://huggingface.co/docs/transformers/master/en/model_doc/auto#transformers.AutoModelForCausalLM )
-    tokenizer (AutoTokenizer): tokenizer MUST define pad_token if stride size is greater than 1.
-    predictions: List text (str) input.
-    add_start_token (bool): whether to add the start token to the texts, so the perplexity can include the probability of the first word. Defaults to True.
-    stride (int): Strided batch size. See https://huggingface.co/docs/transformers/perplexity#example-calculating-perplexity-with-gpt-2-in--transformers for example of strided sliding window. Default: 16
+
+    predictions (list of str): input text, each separate text snippet
+        is one list entry.
+    batch_size (int): the batch size to run texts through the model. Defaults to 16.
+    add_start_token (bool): whether to add the start token to the texts,
+        so the perplexity can include the probability of the first word. Defaults to True.
+    device (str): device to run on, defaults to 'cuda' when available
 Returns:
     perplexity: dictionary containing the perplexity scores for the texts
         in the input list, as well as the mean perplexity. If one of the input texts is
@@ -64,13 +56,11 @@ Returns:
         max length for the perplexity computation.
 Examples:
     Example 1:
-        >>> import evaluate
-
-        >>> perplexity = evaluate.load("bitsyai/perplexity", module_type="measurement")
-        >>> predictions = ["lorem ipsum", "Happy Birthday!", "Bienvenue"]
-        >>> results = perplexity.compute(model_id="meta-llama/Llama-2-7b-chat-hf"
+        >>> perplexity = evaluate.load("perplexity", module_type="metric")
+        >>> input_texts = ["lorem ipsum", "Happy Birthday!", "Bienvenue"]
+        >>> results = perplexity.compute(model_id='gpt2',
         ...                              add_start_token=False,
-        ...                              predictions=predictions) # doctest:+ELLIPSIS
+        ...                              predictions=input_texts) # doctest:+ELLIPSIS
         >>> print(list(results.keys()))
         ['perplexities', 'mean_perplexity']
         >>> print(round(results["mean_perplexity"], 0))
@@ -78,82 +68,84 @@ Examples:
         >>> print(round(results["perplexities"][0], 0))
         32.0
 
+    Example 2:
+        >>> from datasets import load_dataset
+        >>> perplexity = evaluate.load("perplexity", module_type="metric")
+        >>> input_texts = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")["text"][:10] # doctest: +SKIP
+        >>> input_texts = [s for s in input_texts if s!='']
+        >>> results = perplexity.compute(model_id='gpt2',
+        ...                              predictions=input_texts)
+        >>> print(list(results.keys()))
+        ['perplexities', 'mean_perplexity']
+        >>> print(round(results["mean_perplexity"], 2)) # doctest: +SKIP
+        576.76
+        >>> print(round(results["perplexities"][0], 2)) # doctest: +SKIP
+        889.28
 """
 
 
 @evaluate.utils.file_utils.add_start_docstrings(_DESCRIPTION, _KWARGS_DESCRIPTION)
-class Perplexity(evaluate.Measurement):
-    """TODO: Short description of my evaluation module."""
-
-    def __init__(
-        self, model_id: str, device_map="auto", use_fast=True, *args, **kwargs
-    ):
-        super().__init__(*args, **kwargs)
-
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_id, device_map=device_map
-        )
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_id,
-            return_tensors="pt",
-            add_eos_token=True,
-            add_bos_token=True,
-            padding="longest",
-            padding_side="right",
-            use_fast=use_fast,
-            trust_remote_code=True,
-            device_map=device_map,
-        )
-
+class Perplexity(evaluate.Metric):
     def _info(self):
-        # TODO: Specifies the evaluate.EvaluationModuleInfo object
-        return evaluate.MeasurementInfo(
-            # This is the description that will appear on the modules page.
-            module_type="measurement",
+        return evaluate.MetricInfo(
+            module_type="metric",
             description=_DESCRIPTION,
             citation=_CITATION,
             inputs_description=_KWARGS_DESCRIPTION,
-            # This defines the format of each prediction and reference
             features=datasets.Features(
                 {
                     "predictions": datasets.Value("string"),
                 }
             ),
-            # Homepage of the module for documentation
-            # homepage="@TODO",
-            # Additional links to the codebase or references
-            codebase_urls=["http://github.com/bitsyai/huggingface-evaluate-perplexity"],
             reference_urls=["https://huggingface.co/docs/transformers/perplexity"],
         )
 
-    def _download_and_prepare(self, dl_manager):
-        """Optional: download external resources useful to compute the scores"""
-        # TODO: Download external resources if needed
-        pass
-
     def _compute(
         self,
-        predictions: List[str],
+        predictions,
+        pipeline,
+        batch_size: int = 16,
         add_start_token: bool = True,
-        stride: int = 16,
-        max_length: Optional[int] = None,
+        device=None,
+        max_length=None,
     ):
-        # If the stride window size is larger than 1 token and no pad token is defined, we need a padding token between strided batches.
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.add_special_tokens({"pad_token": "[PAD]"})
-            logger.warn(
-                "Calculating perplexity requires a padding token, but None was set. Setting tokenizer.add_special_tokens({'pad_token': '[PAD]'})"
+        if device is not None:
+            assert device in [
+                "gpu",
+                "cpu",
+                "cuda",
+            ], "device should be either gpu or cpu."
+            if device == "gpu":
+                device = "cuda"
+        else:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        model = pipeline.model
+        tokenizer = pipeline.tokenizer
+        # if batch_size > 1 (which generally leads to padding being required), and
+        # if there is not an already assigned pad_token, assign an existing
+        # special token to also be the padding token
+        if tokenizer.pad_token is None and batch_size > 1:
+            existing_special_tokens = list(
+                tokenizer.special_tokens_map_extended.values()
             )
+            # check that the model already has at least one special token defined
+            assert (
+                len(existing_special_tokens) > 0
+            ), "If batch_size > 1, model must have at least one special token to use for padding. Please use a different model or set batch_size=1."
+            # assign one of the special tokens to also be the pad token
+            tokenizer.add_special_tokens({"pad_token": existing_special_tokens[0]})
+
         if add_start_token and max_length:
             # leave room for <BOS> token to be added:
             assert (
-                self.tokenizer.bos_token is not None
+                tokenizer.bos_token is not None
             ), "Input model must already have a BOS token if using add_start_token=True. Please use a different model, or set add_start_token=False"
             max_tokenized_len = max_length - 1
         else:
             max_tokenized_len = max_length
 
-        encodings = self.tokenizer(
+        encodings = tokenizer(
             predictions,
             add_special_tokens=False,
             padding=True,
@@ -161,7 +153,7 @@ class Perplexity(evaluate.Measurement):
             max_length=max_tokenized_len,
             return_tensors="pt",
             return_attention_mask=True,
-        )
+        ).to(device)
 
         encoded_texts = encodings["input_ids"]
         attn_masks = encodings["attention_mask"]
@@ -178,19 +170,22 @@ class Perplexity(evaluate.Measurement):
 
         ppls = []
         loss_fct = CrossEntropyLoss(reduction="none")
-        for start_index in evaluate.logging.tqdm(range(0, len(encoded_texts), stride)):
-            end_index = min(start_index + stride, len(encoded_texts))
+
+        for start_index in logging.tqdm(range(0, len(encoded_texts), batch_size)):
+            end_index = min(start_index + batch_size, len(encoded_texts))
             encoded_batch = encoded_texts[start_index:end_index]
             attn_mask = attn_masks[start_index:end_index]
 
             if add_start_token:
                 bos_tokens_tensor = torch.tensor(
-                    [[self.tokenizer.bos_token_id]] * encoded_batch.size(dim=0)
-                )
+                    [[tokenizer.bos_token_id]] * encoded_batch.size(dim=0)
+                ).to(device)
                 encoded_batch = torch.cat([bos_tokens_tensor, encoded_batch], dim=1)
                 attn_mask = torch.cat(
                     [
-                        torch.ones(bos_tokens_tensor.size(), dtype=torch.int64),
+                        torch.ones(bos_tokens_tensor.size(), dtype=torch.int64).to(
+                            device
+                        ),
                         attn_mask,
                     ],
                     dim=1,
@@ -199,7 +194,7 @@ class Perplexity(evaluate.Measurement):
             labels = encoded_batch
 
             with torch.no_grad():
-                out_logits = self.model(encoded_batch, attention_mask=attn_mask).logits
+                out_logits = model(encoded_batch, attention_mask=attn_mask).logits
 
             shift_logits = out_logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
